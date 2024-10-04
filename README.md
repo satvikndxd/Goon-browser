@@ -22,7 +22,7 @@ Installation
 Clone the repository:
 
 
-git clone https://github.com/yourusername/goon-browser.git
+git clone https://github.com/satvikndxd/goon-browser.git
 Install the required dependencies:
 
 
