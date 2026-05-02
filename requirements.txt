@@ -4,3 +4,11 @@ PyQt6-Qt6
 SpeechRecognition
 google-generativeai
 requests
+adblockparser
+darkdetect
+browser-use
+langchain-anthropic
+langchain-openai
+playwright
+asyncio
+python-dotenv

@@ -1,15 +1,20 @@
 import sys
+import os
+import asyncio
+import threading
+import json
+from datetime import datetime
 import speech_recognition as sr
 import darkdetect
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget, QWidget, QMainWindow,
                              QAction, QToolBar, QDialog, QListWidget, QStyleFactory, QFrame, QLabel, QMessageBox,
                              QGraphicsDropShadowEffect, QSizePolicy, QScrollArea, QGridLayout, QSlider, QProgressBar,
-                             QMenu, QWidgetAction)
+                             QMenu, QWidgetAction, QTextEdit, QComboBox, QCheckBox, QSpinBox, QPlainTextEdit)
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEngineProfile, QWebEnginePage
 from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
-from PyQt5.QtCore import QUrl, Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, pyqtProperty, QByteArray
-from PyQt5.QtGui import QIcon, QFont, QColor, QPainter, QPainterPath, QPixmap, QPen, QBrush, QLinearGradient, QFontDatabase
+from PyQt5.QtCore import QUrl, Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, pyqtProperty, QByteArray, QThread, pyqtSignal, QObject
+from PyQt5.QtGui import QIcon, QFont, QColor, QPainter, QPainterPath, QPixmap, QPen, QBrush, QLinearGradient, QFontDatabase, QTextCursor
 from PyQt5.QtNetwork import QNetworkProxy, QNetworkProxyFactory, QNetworkAccessManager, QNetworkReply
 from PyQt5.QtSvg import QSvgRenderer, QSvgWidget
 from adblockparser import AdblockRules
@@ -18,6 +23,17 @@ import google.generativeai as genai
 import urllib.parse
 import subprocess
 import base64
+
+# Try to import browser-use for AI agent functionality
+BROWSER_USE_AVAILABLE = False
+try:
+    from browser_use import Agent, Browser, BrowserConfig
+    from langchain_anthropic import ChatAnthropic
+    from langchain_openai import ChatOpenAI
+    BROWSER_USE_AVAILABLE = True
+except ImportError:
+    print("browser-use not installed. AI Agent features will be disabled.")
+    print("Install with: pip install browser-use langchain-anthropic langchain-openai")
 
 # ============================================================================
 # BAUHAUS SVG ICONS - Geometric, Primary Colors (Red, Blue, Yellow, Black, White)
@@ -320,6 +336,70 @@ class BauhausSVG:
             <rect x="8" y="24" width="24" height="32" fill="#1D3557" rx="2"/>
             <rect x="32" y="24" width="24" height="32" fill="#F4D35E" rx="2"/>
             <circle cx="32" cy="16" r="12" fill="#E63946"/>
+        </svg>'''
+
+    @staticmethod
+    def ai_agent():
+        """AI Agent icon - Robot/AI brain design"""
+        return '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="#1D3557"/>
+            <rect x="18" y="20" width="28" height="24" fill="#F4D35E" rx="4"/>
+            <circle cx="26" cy="30" r="4" fill="#1D3557"/>
+            <circle cx="38" cy="30" r="4" fill="#1D3557"/>
+            <rect x="24" y="38" width="16" height="4" fill="#1D3557" rx="2"/>
+            <rect x="14" y="26" width="4" height="12" fill="#E63946" rx="2"/>
+            <rect x="46" y="26" width="4" height="12" fill="#E63946" rx="2"/>
+            <rect x="28" y="12" width="8" height="8" fill="#E63946"/>
+            <circle cx="32" cy="10" r="4" fill="#F4D35E"/>
+            <rect x="26" y="44" width="12" height="6" fill="#E63946" rx="2"/>
+            <rect x="22" y="50" width="6" height="8" fill="#1D3557" rx="2"/>
+            <rect x="36" y="50" width="6" height="8" fill="#1D3557" rx="2"/>
+        </svg>'''
+
+    @staticmethod
+    def ai_agent_running():
+        """AI Agent icon when running - Animated style"""
+        return '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="#E63946"/>
+            <rect x="18" y="20" width="28" height="24" fill="#F4D35E" rx="4"/>
+            <circle cx="26" cy="30" r="4" fill="#1D3557">
+                <animate attributeName="r" values="3;5;3" dur="0.5s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="38" cy="30" r="4" fill="#1D3557">
+                <animate attributeName="r" values="5;3;5" dur="0.5s" repeatCount="indefinite"/>
+            </circle>
+            <rect x="24" y="38" width="16" height="4" fill="#1D3557" rx="2"/>
+            <rect x="14" y="26" width="4" height="12" fill="#FFFFFF" rx="2"/>
+            <rect x="46" y="26" width="4" height="12" fill="#FFFFFF" rx="2"/>
+            <rect x="28" y="12" width="8" height="8" fill="#FFFFFF"/>
+            <circle cx="32" cy="10" r="4" fill="#F4D35E"/>
+        </svg>'''
+
+    @staticmethod
+    def ai_thinking():
+        """AI thinking/processing icon"""
+        return '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="#F4D35E"/>
+            <circle cx="20" cy="32" r="6" fill="#1D3557"/>
+            <circle cx="32" cy="32" r="6" fill="#E63946"/>
+            <circle cx="44" cy="32" r="6" fill="#1D3557"/>
+        </svg>'''
+
+    @staticmethod
+    def ai_success():
+        """AI task completed successfully"""
+        return '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="#27AE60"/>
+            <polyline points="20,32 28,40 44,24" stroke="#FFFFFF" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>'''
+
+    @staticmethod
+    def ai_error():
+        """AI task failed"""
+        return '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="#E63946"/>
+            <rect x="28" y="16" width="8" height="24" fill="#FFFFFF" rx="2"/>
+            <circle cx="32" cy="48" r="4" fill="#FFFFFF"/>
         </svg>'''
 
 
@@ -926,6 +1006,679 @@ class SettingsDialog(QDialog):
 
 
 # ============================================================================
+# AI AGENT WORKER THREAD
+# ============================================================================
+
+class AIAgentWorker(QObject):
+    """Worker class for running AI Agent tasks in a separate thread"""
+    progress = pyqtSignal(str)  # Emits progress messages
+    step_completed = pyqtSignal(str, str)  # Emits step description and result
+    finished = pyqtSignal(str, bool)  # Emits final result and success status
+    screenshot = pyqtSignal(str)  # Emits screenshot path
+
+    def __init__(self, task, llm_provider="anthropic", api_key=None, headless=True, max_steps=25):
+        super().__init__()
+        self.task = task
+        self.llm_provider = llm_provider
+        self.api_key = api_key
+        self.headless = headless
+        self.max_steps = max_steps
+        self.is_running = True
+
+    def stop(self):
+        self.is_running = False
+
+    def run(self):
+        """Execute the AI agent task"""
+        if not BROWSER_USE_AVAILABLE:
+            self.finished.emit("browser-use library not installed. Please run: pip install browser-use langchain-anthropic langchain-openai", False)
+            return
+
+        try:
+            # Set API key in environment if provided
+            if self.api_key:
+                if self.llm_provider == "anthropic":
+                    os.environ["ANTHROPIC_API_KEY"] = self.api_key
+                elif self.llm_provider == "openai":
+                    os.environ["OPENAI_API_KEY"] = self.api_key
+
+            self.progress.emit("🤖 Initializing AI Agent...")
+
+            # Create LLM based on provider
+            if self.llm_provider == "anthropic":
+                llm = ChatAnthropic(model="claude-sonnet-4-20250514")
+            else:
+                llm = ChatOpenAI(model="gpt-4o")
+
+            self.progress.emit("🌐 Starting browser...")
+
+            # Create browser configuration
+            browser_config = BrowserConfig(
+                headless=self.headless,
+            )
+
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                # Run the agent
+                result = loop.run_until_complete(self._run_agent(llm, browser_config))
+                self.finished.emit(result, True)
+            finally:
+                loop.close()
+
+        except Exception as e:
+            self.finished.emit(f"Error: {str(e)}", False)
+
+    async def _run_agent(self, llm, browser_config):
+        """Async method to run the agent"""
+        self.progress.emit("🧠 Creating AI Agent...")
+
+        browser = Browser(config=browser_config)
+
+        agent = Agent(
+            task=self.task,
+            llm=llm,
+            browser=browser,
+        )
+
+        self.progress.emit(f"📋 Task: {self.task}")
+        self.progress.emit("🚀 Starting execution...")
+
+        # Custom callback to capture steps
+        step_count = 0
+
+        try:
+            result = await agent.run(max_steps=self.max_steps)
+
+            # Format the result
+            if hasattr(result, 'final_result'):
+                return f"✅ Task completed!\n\nResult:\n{result.final_result()}"
+            else:
+                return f"✅ Task completed!\n\nResult:\n{str(result)}"
+
+        except Exception as e:
+            return f"❌ Agent error: {str(e)}"
+        finally:
+            await browser.close()
+
+
+class AIAgentThread(QThread):
+    """Thread wrapper for AI Agent Worker"""
+    progress = pyqtSignal(str)
+    step_completed = pyqtSignal(str, str)
+    finished_signal = pyqtSignal(str, bool)
+    screenshot = pyqtSignal(str)
+
+    def __init__(self, task, llm_provider="anthropic", api_key=None, headless=True, max_steps=25):
+        super().__init__()
+        self.worker = AIAgentWorker(task, llm_provider, api_key, headless, max_steps)
+        self.worker.progress.connect(self.progress.emit)
+        self.worker.step_completed.connect(self.step_completed.emit)
+        self.worker.finished.connect(self.finished_signal.emit)
+        self.worker.screenshot.connect(self.screenshot.emit)
+
+    def run(self):
+        self.worker.run()
+
+    def stop(self):
+        self.worker.stop()
+
+
+# ============================================================================
+# AI AGENT DIALOG - BAUHAUS STYLE
+# ============================================================================
+
+class AIAgentDialog(QDialog):
+    """Dialog for AI Agent task input and progress display"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.browser = parent
+        self.agent_thread = None
+        self.setWindowTitle("AI Agent - Browse for You")
+        self.setMinimumSize(700, 600)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Header with Bauhaus styling
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
+        # AI Agent icon
+        icon_label = QLabel()
+        icon_pixmap = svg_to_pixmap(BauhausSVG.ai_agent(), 48)
+        icon_label.setPixmap(icon_pixmap)
+        header_layout.addWidget(icon_label)
+
+        # Title
+        title_widget = QWidget()
+        title_layout = QVBoxLayout(title_widget)
+        title_layout.setContentsMargins(16, 0, 0, 0)
+        title_layout.setSpacing(4)
+
+        title = QLabel("AI AGENT")
+        title.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            color: {BauhausColors.BLUE};
+        """)
+        title_layout.addWidget(title)
+
+        subtitle = QLabel("Let AI browse the web for you")
+        subtitle.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 13px;
+            color: {BauhausColors.ACCENT};
+        """)
+        title_layout.addWidget(subtitle)
+
+        header_layout.addWidget(title_widget)
+        header_layout.addStretch()
+
+        layout.addWidget(header_widget)
+
+        # Geometric divider
+        divider = QWidget()
+        divider.setFixedHeight(8)
+        divider_layout = QHBoxLayout(divider)
+        divider_layout.setContentsMargins(0, 0, 0, 0)
+        divider_layout.setSpacing(4)
+
+        for color in [BauhausColors.RED, BauhausColors.YELLOW, BauhausColors.BLUE]:
+            segment = QLabel()
+            segment.setFixedHeight(8)
+            segment.setStyleSheet(f"background-color: {color};")
+            divider_layout.addWidget(segment)
+
+        layout.addWidget(divider)
+
+        # Task input area
+        task_label = QLabel("TASK DESCRIPTION")
+        task_label.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: {BauhausColors.BLUE};
+            margin-top: 8px;
+        """)
+        layout.addWidget(task_label)
+
+        self.task_input = QTextEdit()
+        self.task_input.setPlaceholderText(
+            "Describe what you want the AI to do...\n\n"
+            "Examples:\n"
+            "• Go to Amazon, search for mechanical keyboards under $50, and list the top 3 results\n"
+            "• Navigate to GitHub and find the most starred Python repositories\n"
+            "• Go to Wikipedia and summarize the article about Bauhaus architecture\n"
+            "• Search for flights from NYC to London on Google Flights and find the cheapest option"
+        )
+        self.task_input.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {BauhausColors.LIGHT_BG};
+                border: 3px solid {BauhausColors.BLUE};
+                border-radius: 12px;
+                padding: 16px;
+                font-size: 14px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                color: {BauhausColors.BLACK};
+            }}
+            QTextEdit:focus {{
+                border-color: {BauhausColors.RED};
+            }}
+        """)
+        self.task_input.setMinimumHeight(120)
+        layout.addWidget(self.task_input)
+
+        # Settings row
+        settings_widget = QWidget()
+        settings_layout = QHBoxLayout(settings_widget)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(16)
+
+        # LLM Provider
+        provider_label = QLabel("AI Provider:")
+        provider_label.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 13px;
+            color: {BauhausColors.BLACK};
+        """)
+        settings_layout.addWidget(provider_label)
+
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItems(["Anthropic (Claude)", "OpenAI (GPT-4)"])
+        self.provider_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {BauhausColors.WHITE};
+                border: 2px solid {BauhausColors.BLUE};
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 13px;
+                min-width: 150px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 30px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 8px solid {BauhausColors.BLUE};
+            }}
+        """)
+        settings_layout.addWidget(self.provider_combo)
+
+        # Headless checkbox
+        self.headless_checkbox = QCheckBox("Run headless (invisible browser)")
+        self.headless_checkbox.setChecked(False)
+        self.headless_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 13px;
+                color: {BauhausColors.BLACK};
+            }}
+            QCheckBox::indicator {{
+                width: 20px;
+                height: 20px;
+                border-radius: 4px;
+                border: 2px solid {BauhausColors.BLUE};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {BauhausColors.RED};
+                border-color: {BauhausColors.RED};
+            }}
+        """)
+        settings_layout.addWidget(self.headless_checkbox)
+
+        # Max steps
+        steps_label = QLabel("Max steps:")
+        steps_label.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 13px;
+            color: {BauhausColors.BLACK};
+        """)
+        settings_layout.addWidget(steps_label)
+
+        self.max_steps_spin = QSpinBox()
+        self.max_steps_spin.setRange(5, 100)
+        self.max_steps_spin.setValue(25)
+        self.max_steps_spin.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {BauhausColors.WHITE};
+                border: 2px solid {BauhausColors.BLUE};
+                border-radius: 8px;
+                padding: 8px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 13px;
+                min-width: 70px;
+            }}
+        """)
+        settings_layout.addWidget(self.max_steps_spin)
+
+        settings_layout.addStretch()
+        layout.addWidget(settings_widget)
+
+        # API Key input
+        api_key_widget = QWidget()
+        api_key_layout = QHBoxLayout(api_key_widget)
+        api_key_layout.setContentsMargins(0, 0, 0, 0)
+        api_key_layout.setSpacing(12)
+
+        api_label = QLabel("API Key:")
+        api_label.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 13px;
+            color: {BauhausColors.BLACK};
+        """)
+        api_key_layout.addWidget(api_label)
+
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("Enter your API key (or set ANTHROPIC_API_KEY/OPENAI_API_KEY env var)")
+        self.api_key_input.setEchoMode(QLineEdit.Password)
+        self.api_key_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {BauhausColors.WHITE};
+                border: 2px solid {BauhausColors.BLUE};
+                border-radius: 8px;
+                padding: 10px 16px;
+                font-size: 13px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+            }}
+            QLineEdit:focus {{
+                border-color: {BauhausColors.RED};
+            }}
+        """)
+        api_key_layout.addWidget(self.api_key_input)
+
+        layout.addWidget(api_key_widget)
+
+        # Progress/Output area
+        output_label = QLabel("OUTPUT")
+        output_label.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: {BauhausColors.BLUE};
+            margin-top: 8px;
+        """)
+        layout.addWidget(output_label)
+
+        self.output_text = QPlainTextEdit()
+        self.output_text.setReadOnly(True)
+        self.output_text.setPlaceholderText("Agent output will appear here...")
+        self.output_text.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {BauhausColors.BLACK};
+                border: 3px solid {BauhausColors.BLUE};
+                border-radius: 12px;
+                padding: 16px;
+                font-size: 13px;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+                color: {BauhausColors.YELLOW};
+            }}
+        """)
+        layout.addWidget(self.output_text)
+
+        # Status indicator
+        self.status_widget = QWidget()
+        status_layout = QHBoxLayout(self.status_widget)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.status_indicator = BauhausStatusIndicator(BauhausColors.ACCENT, 12)
+        status_layout.addWidget(self.status_indicator)
+
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet(f"""
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: 13px;
+            color: {BauhausColors.ACCENT};
+            margin-left: 8px;
+        """)
+        status_layout.addWidget(self.status_label)
+        status_layout.addStretch()
+
+        layout.addWidget(self.status_widget)
+
+        # Buttons
+        button_widget = QWidget()
+        button_layout = QHBoxLayout(button_widget)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(12)
+
+        # Example tasks button
+        examples_btn = QPushButton("📋 Examples")
+        examples_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BauhausColors.YELLOW};
+                color: {BauhausColors.BLACK};
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: #E5C54E;
+            }}
+        """)
+        examples_btn.clicked.connect(self.show_examples)
+        button_layout.addWidget(examples_btn)
+
+        # Clear button
+        clear_btn = QPushButton("🗑️ Clear")
+        clear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BauhausColors.LIGHT_BG};
+                color: {BauhausColors.BLACK};
+                border: 2px solid {BauhausColors.BLUE};
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: {BauhausColors.BLUE};
+                color: {BauhausColors.WHITE};
+            }}
+        """)
+        clear_btn.clicked.connect(self.clear_output)
+        button_layout.addWidget(clear_btn)
+
+        button_layout.addStretch()
+
+        # Stop button
+        self.stop_btn = QPushButton("⬛ Stop")
+        self.stop_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BauhausColors.RED};
+                color: {BauhausColors.WHITE};
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #C82333;
+            }}
+            QPushButton:disabled {{
+                background-color: #CCCCCC;
+            }}
+        """)
+        self.stop_btn.clicked.connect(self.stop_agent)
+        self.stop_btn.setEnabled(False)
+        button_layout.addWidget(self.stop_btn)
+
+        # Run button
+        self.run_btn = QPushButton("▶️ RUN AGENT")
+        self.run_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BauhausColors.BLUE};
+                color: {BauhausColors.WHITE};
+                border: none;
+                border-radius: 8px;
+                padding: 12px 32px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: bold;
+                letter-spacing: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: {BauhausColors.RED};
+            }}
+            QPushButton:disabled {{
+                background-color: #CCCCCC;
+            }}
+        """)
+        self.run_btn.clicked.connect(self.run_agent)
+        button_layout.addWidget(self.run_btn)
+
+        layout.addWidget(button_widget)
+
+        # Set dialog style
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {BauhausColors.WHITE};
+            }}
+        """)
+
+    def show_examples(self):
+        """Show example tasks"""
+        examples = [
+            "Go to Amazon, search for 'mechanical keyboard' under $100, and list the top 5 results with prices",
+            "Navigate to GitHub trending and find the top 3 Python repositories from this week",
+            "Go to Hacker News and summarize the top 5 stories",
+            "Search Google for 'best pizza in New York' and list the top 3 rated restaurants",
+            "Go to Wikipedia and give me a brief summary of the Bauhaus art movement",
+            "Navigate to YouTube and find the most viewed video this month",
+            "Go to Reddit r/programming and tell me what the top 3 posts are about",
+            "Search for flights from San Francisco to Tokyo on Google Flights and find the cheapest option",
+        ]
+
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {BauhausColors.WHITE};
+                border: 3px solid {BauhausColors.BLUE};
+                border-radius: 8px;
+                padding: 8px;
+            }}
+            QMenu::item {{
+                padding: 10px 16px;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                font-size: 12px;
+                color: {BauhausColors.BLACK};
+            }}
+            QMenu::item:selected {{
+                background-color: {BauhausColors.YELLOW};
+            }}
+        """)
+
+        for example in examples:
+            action = menu.addAction(example[:60] + "..." if len(example) > 60 else example)
+            action.setData(example)
+
+        action = menu.exec_(QtWidgets.QCursor.pos())
+        if action:
+            self.task_input.setText(action.data())
+
+    def clear_output(self):
+        """Clear the output text"""
+        self.output_text.clear()
+        self.status_label.setText("Ready")
+        self.status_indicator.set_color(BauhausColors.ACCENT)
+
+    def run_agent(self):
+        """Start the AI agent"""
+        task = self.task_input.toPlainText().strip()
+
+        if not task:
+            QMessageBox.warning(self, "No Task", "Please enter a task description.")
+            return
+
+        if not BROWSER_USE_AVAILABLE:
+            QMessageBox.critical(
+                self,
+                "Missing Dependencies",
+                "browser-use library is not installed.\n\n"
+                "Please install it with:\n"
+                "pip install browser-use langchain-anthropic langchain-openai playwright\n"
+                "playwright install"
+            )
+            return
+
+        # Get settings
+        provider = "anthropic" if self.provider_combo.currentIndex() == 0 else "openai"
+        api_key = self.api_key_input.text().strip() or None
+        headless = self.headless_checkbox.isChecked()
+        max_steps = self.max_steps_spin.value()
+
+        # Check for API key
+        env_key = "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+        if not api_key and not os.environ.get(env_key):
+            QMessageBox.warning(
+                self,
+                "API Key Required",
+                f"Please enter your {provider.title()} API key or set the {env_key} environment variable."
+            )
+            return
+
+        # Update UI state
+        self.run_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.task_input.setEnabled(False)
+        self.status_label.setText("Running...")
+        self.status_indicator.set_color(BauhausColors.YELLOW)
+
+        self.output_text.clear()
+        self.append_output(f"{'='*60}")
+        self.append_output(f"🤖 AI AGENT TASK")
+        self.append_output(f"{'='*60}")
+        self.append_output(f"Task: {task}")
+        self.append_output(f"Provider: {provider.title()}")
+        self.append_output(f"Headless: {headless}")
+        self.append_output(f"Max Steps: {max_steps}")
+        self.append_output(f"{'='*60}\n")
+
+        # Create and start the agent thread
+        self.agent_thread = AIAgentThread(task, provider, api_key, headless, max_steps)
+        self.agent_thread.progress.connect(self.on_progress)
+        self.agent_thread.finished_signal.connect(self.on_finished)
+        self.agent_thread.start()
+
+    def stop_agent(self):
+        """Stop the running agent"""
+        if self.agent_thread:
+            self.agent_thread.stop()
+            self.append_output("\n⚠️ Stopping agent...")
+
+    def on_progress(self, message):
+        """Handle progress updates"""
+        self.append_output(message)
+
+    def on_finished(self, result, success):
+        """Handle agent completion"""
+        self.append_output(f"\n{'='*60}")
+        self.append_output(result)
+        self.append_output(f"{'='*60}")
+
+        # Update UI state
+        self.run_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.task_input.setEnabled(True)
+
+        if success:
+            self.status_label.setText("Completed")
+            self.status_indicator.set_color("#27AE60")  # Green
+        else:
+            self.status_label.setText("Failed")
+            self.status_indicator.set_color(BauhausColors.RED)
+
+        self.agent_thread = None
+
+    def append_output(self, text):
+        """Append text to output area"""
+        self.output_text.appendPlainText(text)
+        # Scroll to bottom
+        scrollbar = self.output_text.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def closeEvent(self, event):
+        """Handle dialog close"""
+        if self.agent_thread and self.agent_thread.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "Agent Running",
+                "An agent is still running. Stop it and close?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.stop_agent()
+                self.agent_thread.wait(5000)  # Wait up to 5 seconds
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
+
+
+# ============================================================================
 # AD BLOCK INTERCEPTOR
 # ============================================================================
 
@@ -1039,6 +1792,28 @@ class BrowserApp(QMainWindow):
         # Dark Mode
         self.dark_mode_btn = self.sidebar.add_button(BauhausSVG.dark_mode(), self.toggle_dark_mode, "Dark Mode")
 
+        # Spacer
+        spacer2 = QWidget()
+        spacer2.setFixedHeight(20)
+        self.sidebar.button_layout.addWidget(spacer2)
+
+        # AI Agent - Prominent placement
+        self.ai_agent_btn = self.sidebar.add_button(BauhausSVG.ai_agent(), self.show_ai_agent, "AI Agent")
+        # Make AI Agent button stand out with a special style
+        self.ai_agent_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BauhausColors.YELLOW};
+                border: none;
+                border-radius: 22px;
+            }}
+            QPushButton:hover {{
+                background-color: {BauhausColors.RED};
+            }}
+            QPushButton:pressed {{
+                background-color: {BauhausColors.WHITE};
+            }}
+        """)
+
         # Settings
         self.sidebar.add_button(BauhausSVG.settings(), self.show_settings, "Settings")
 
@@ -1129,6 +1904,23 @@ class BrowserApp(QMainWindow):
         dev_btn.setToolTip("Developer Tools")
         dev_btn.clicked.connect(self.open_dev_tools)
         actions_layout.addWidget(dev_btn)
+
+        # AI Agent button in toolbar (prominent)
+        ai_btn = BauhausButton(BauhausSVG.ai_agent(), size=44)
+        ai_btn.setToolTip("AI Agent - Let AI browse for you")
+        ai_btn.clicked.connect(self.show_ai_agent)
+        ai_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BauhausColors.YELLOW};
+                border: 2px solid {BauhausColors.BLUE};
+                border-radius: 22px;
+            }}
+            QPushButton:hover {{
+                background-color: {BauhausColors.RED};
+                border-color: {BauhausColors.RED};
+            }}
+        """)
+        actions_layout.addWidget(ai_btn)
 
         # Menu
         menu_btn = BauhausButton(BauhausSVG.menu(), size=44)
@@ -1559,6 +2351,8 @@ class BrowserApp(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_D and event.modifiers() == Qt.ShiftModifier:
             self.show_spotlight_search()
+        elif event.key() == Qt.Key_A and event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier):
+            self.show_ai_agent()  # Ctrl+Shift+A for AI Agent
         elif event.key() == Qt.Key_T and event.modifiers() == Qt.ControlModifier:
             self.add_new_tab()
         elif event.key() == Qt.Key_W and event.modifiers() == Qt.ControlModifier:
@@ -1661,6 +2455,11 @@ class BrowserApp(QMainWindow):
         settings_dialog = SettingsDialog(self)
         settings_dialog.exec_()
 
+    def show_ai_agent(self):
+        """Show the AI Agent dialog"""
+        ai_dialog = AIAgentDialog(self)
+        ai_dialog.exec_()
+
     def take_screenshot(self):
         current_view = self.current_web_view()
         if current_view:
@@ -1733,6 +2532,8 @@ class BrowserApp(QMainWindow):
         menu.addSeparator()
         menu.addAction("Developer Tools (F12)", self.open_dev_tools)
         menu.addAction("Settings", self.show_settings)
+        menu.addSeparator()
+        menu.addAction("🤖 AI Agent - Browse for You", self.show_ai_agent)
         menu.addSeparator()
         menu.addAction("About Comet Browser", self.show_about)
         menu.addAction("Quit (Ctrl+Q)", self.close)
